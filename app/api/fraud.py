@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from app.core.config import BASE_DIR, BANKS_DIR, SBI_BANK_ID, SBI_BANK_NAME
 from app.db.mongodb import cases_collection, chat_logs_collection, documents_collection, fs
 from app.services.auth_service import verify_user, verify_user_credentials
-from app.services.fraud_service import detect_fraud
+from app.services.fraud_service import detect_fraud, generate_investigation_report
 
 
 router = APIRouter()
@@ -227,15 +227,7 @@ I did not get a clear Yes/No. Please reply Yes or No.
 
     elif step == "generate_report":
         if choice == "yes":
-            report = f"""
-AUTOMATED FRAUD REPORT
-
-Case Query:
-{case_query or ""}
-
-Fraud Analysis:
-{format_analysis(analysis)}
-"""
+            report = generate_investigation_report(case_query or query, bank_id, analysis or {})
 
             response = f"""
 Generated Investigation Report:
