@@ -44,3 +44,7 @@ services:
           envVarKey: RENDER_EXTERNAL_URL
       - key: API_REQUEST_TIMEOUT_SECONDS
         value: "75"
+      - key: API_MAX_RETRIES
+        value: "4"
+      - key: API_RETRY_BACKOFF_SECONDS
+        value: "3"

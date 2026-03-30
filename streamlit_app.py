@@ -1,5 +1,6 @@
 ﻿import streamlit as st
 import os
+import time
 from urllib.parse import urljoin
 
 import requests
@@ -8,6 +9,9 @@ API_BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000").strip().rstrip("/"
 API_URL = f"{API_BASE}/fraud"
 LOGIN_URL = f"{API_BASE}/login"
 API_REQUEST_TIMEOUT_SECONDS = float(os.getenv("API_REQUEST_TIMEOUT_SECONDS", "75"))
+API_MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "3"))
+API_RETRY_BACKOFF_SECONDS = float(os.getenv("API_RETRY_BACKOFF_SECONDS", "2"))
+TRANSIENT_STATUS_CODES = {429, 502, 503, 504}
 
 st.set_page_config(page_title="SBI Fraud Investigation Assistant", layout="wide")
 
@@ -207,6 +211,41 @@ if "login_error" not in st.session_state:
 # HELPERS
 # -------------------------
 
+def request_backend(method, url, **kwargs):
+    last_response = None
+    last_error = None
+
+    for attempt in range(API_MAX_RETRIES):
+        try:
+            response = requests.request(
+                method,
+                url,
+                timeout=API_REQUEST_TIMEOUT_SECONDS,
+                **kwargs,
+            )
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt == API_MAX_RETRIES - 1:
+                raise
+        else:
+            if response.status_code not in TRANSIENT_STATUS_CODES:
+                return response
+
+            last_response = response
+            if attempt == API_MAX_RETRIES - 1:
+                return response
+
+        time.sleep(API_RETRY_BACKOFF_SECONDS * (attempt + 1))
+
+    if last_response is not None:
+        return last_response
+
+    if last_error is not None:
+        raise last_error
+
+    raise RuntimeError("Backend request failed without a response.")
+
+
 def call_fraud_api(user_id, query, session_id):
     try:
         params = {
@@ -215,8 +254,28 @@ def call_fraud_api(user_id, query, session_id):
         }
         if session_id:
             params["sessionId"] = session_id
-        response = requests.get(API_URL, params=params, timeout=API_REQUEST_TIMEOUT_SECONDS)
-        return response.json()
+
+        response = request_backend("get", API_URL, params=params)
+
+        if response.ok:
+            return response.json()
+
+        if response.status_code in TRANSIENT_STATUS_CODES:
+            return {
+                "chatbot_response": (
+                    f"Backend temporarily returned {response.status_code}. "
+                    "On Render free tier this usually means the API is waking up or a transient routing issue happened. "
+                    "Please retry in a few seconds."
+                )
+            }
+
+        try:
+            payload = response.json()
+            detail = payload.get("detail", "")
+        except Exception:
+            detail = response.text.strip()
+
+        return {"chatbot_response": detail or f"Backend returned status {response.status_code}."}
     except Exception as e:
         return {
             "chatbot_response": (
@@ -272,10 +331,10 @@ if not st.session_state.logged_in:
                 st.session_state.login_error = "User ID and password are required."
             else:
                 try:
-                    resp = requests.post(
+                    resp = request_backend(
+                        "post",
                         LOGIN_URL,
                         json={"userId": user_id_input, "password": password_input},
-                        timeout=API_REQUEST_TIMEOUT_SECONDS,
                     )
                 except Exception as exc:
                     st.session_state.login_error = (
@@ -290,6 +349,12 @@ if not st.session_state.logged_in:
                         st.rerun()
                     elif resp.status_code == 401:
                         st.session_state.login_error = "Invalid user ID or password."
+                    elif resp.status_code in TRANSIENT_STATUS_CODES:
+                        st.session_state.login_error = (
+                            f"Backend temporarily returned {resp.status_code}. "
+                            "On Render free tier this usually means the API is waking up or a transient routing issue happened. "
+                            "Please wait a few seconds and try again."
+                        )
                     else:
                         try:
                             detail = resp.json().get("detail", "")
@@ -374,9 +439,9 @@ for idx, chat in enumerate(st.session_state.chat_history):
                         key=f"download_{idx}_{doc_name}"
                     )
             elif file_id:
-                resp = requests.get(
+                resp = request_backend(
+                    "get",
                     urljoin(f"{API_BASE}/", f"documents/{file_id}"),
-                    timeout=API_REQUEST_TIMEOUT_SECONDS,
                 )
                 if resp.status_code == 200:
                     st.download_button(
