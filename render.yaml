@@ -1,0 +1,44 @@
+services:
+  - type: web
+    name: sbi-fraud-api
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements-backend.txt && python scripts/precompute_vectors.py
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_GENERATION_MODEL
+        value: gemini-3.1-flash-lite-preview
+      - key: GEMINI_EMBEDDING_MODEL
+        value: gemini-embedding-2-preview
+      - key: GEMINI_EMBEDDING_DIMENSION
+        value: "768"
+      - key: RAG_TOP_K
+        value: "4"
+      - key: RAG_MIN_SIMILARITY
+        value: "0.2"
+      - key: SBI_DEFAULT_USER_ID
+        value: sbi001
+      - key: SBI_DEFAULT_PASSWORD
+        value: "0000"
+  - type: web
+    name: sbi-fraud-ui
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements-frontend.txt
+    startCommand: streamlit run streamlit_app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true --browser.gatherUsageStats false
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    envVars:
+      - key: API_BASE_URL
+        fromService:
+          type: web
+          name: sbi-fraud-api
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: API_REQUEST_TIMEOUT_SECONDS
+        value: "75"

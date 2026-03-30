@@ -48,3 +48,45 @@ Default local login:
 - Password: `0000`
 
 The next improvement area is refining the prompt/output format and polishing the Gemini RAG response quality now that the heavy local dependency path is gone.
+
+## Render deploy
+
+This repo is prepared for a two-service Render deployment:
+
+- Backend web service: FastAPI API
+- Frontend web service: Streamlit UI
+
+Files added for Render:
+
+- `render.yaml`
+- `.python-version`
+- `requirements-backend.txt`
+- `requirements-frontend.txt`
+- `scripts/precompute_vectors.py`
+
+Important free-tier note:
+
+- Render web services use an ephemeral filesystem by default.
+- Runtime-written files are not durable across deploys, restarts, or instance replacement.
+- To avoid re-embedding the SBI SOP on every cold start, the backend build now precomputes `local_cache/sbi_vectors.json` during the build step.
+- On a new deploy, the cache is rebuilt once during build.
+- On normal restarts of that same deploy, the baked-in cache is reused.
+
+How to deploy on Render:
+
+1. Push this repo to GitHub.
+2. In Render, create a new Blueprint from the repo.
+3. Render will detect `render.yaml` and create:
+   - `sbi-fraud-api`
+   - `sbi-fraud-ui`
+4. When prompted, set the backend secret `GEMINI_API_KEY`.
+5. Deploy both services.
+6. Open the frontend URL and log in with:
+   - User ID: `sbi001`
+   - Password: `0000`
+
+How the services connect:
+
+- The frontend reads `API_BASE_URL`.
+- In `render.yaml`, that variable is populated from the backend service's `RENDER_EXTERNAL_URL`.
+- This uses the backend's public Render URL, which is the right fit for two free web services.

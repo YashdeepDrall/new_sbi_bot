@@ -279,12 +279,12 @@ I did not get a clear Yes/No. Please reply Yes or No.
 
     elif step == "final_assistance":
         if choice == "yes":
-            response = "Okay. Please provide details about the case."
+            response = "Okay😊 Please provide details about the case."
             next_step = "conversation_end"
 
         elif choice == "no":
             response = (
-                "Thank you for using the SBI Fraud Investigation Assistant. "
+                "Thank you for using the SBI Fraud Investigation Assistant😊. "
                 "If you need help again, just type the case details anytime and I will be ready to assist."
             )
             next_step = "conversation_end"

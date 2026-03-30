@@ -1,10 +1,13 @@
 ﻿import streamlit as st
-import requests
 import os
+from urllib.parse import urljoin
 
-API_BASE = "http://127.0.0.1:8000"
+import requests
+
+API_BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000").strip().rstrip("/")
 API_URL = f"{API_BASE}/fraud"
 LOGIN_URL = f"{API_BASE}/login"
+API_REQUEST_TIMEOUT_SECONDS = float(os.getenv("API_REQUEST_TIMEOUT_SECONDS", "75"))
 
 st.set_page_config(page_title="SBI Fraud Investigation Assistant", layout="wide")
 
@@ -212,10 +215,15 @@ def call_fraud_api(user_id, query, session_id):
         }
         if session_id:
             params["sessionId"] = session_id
-        response = requests.get(API_URL, params=params)
+        response = requests.get(API_URL, params=params, timeout=API_REQUEST_TIMEOUT_SECONDS)
         return response.json()
     except Exception as e:
-        return {"chatbot_response": f"API Error: {str(e)}"}
+        return {
+            "chatbot_response": (
+                "API Error: "
+                f"{str(e)}. If you are on Render free tier, the backend may still be waking up. Please retry."
+            )
+        }
 
 
 def extract_prompt(text):
@@ -263,14 +271,31 @@ if not st.session_state.logged_in:
             if not user_id_input or not password_input:
                 st.session_state.login_error = "User ID and password are required."
             else:
-                resp = requests.post(LOGIN_URL, json={"userId": user_id_input, "password": password_input})
-                if resp.status_code == 200:
-                    st.session_state.user_id = user_id_input
-                    st.session_state.logged_in = True
-                    st.session_state.login_error = ""
-                    st.rerun()
+                try:
+                    resp = requests.post(
+                        LOGIN_URL,
+                        json={"userId": user_id_input, "password": password_input},
+                        timeout=API_REQUEST_TIMEOUT_SECONDS,
+                    )
+                except Exception as exc:
+                    st.session_state.login_error = (
+                        f"Unable to reach backend: {exc}. "
+                        "If this is on Render free tier, wait for the backend cold start and try again."
+                    )
                 else:
-                    st.session_state.login_error = "Invalid user ID or password."
+                    if resp.status_code == 200:
+                        st.session_state.user_id = user_id_input
+                        st.session_state.logged_in = True
+                        st.session_state.login_error = ""
+                        st.rerun()
+                    elif resp.status_code == 401:
+                        st.session_state.login_error = "Invalid user ID or password."
+                    else:
+                        try:
+                            detail = resp.json().get("detail", "")
+                        except Exception:
+                            detail = ""
+                        st.session_state.login_error = detail or f"Backend returned status {resp.status_code}."
 
         if st.session_state.login_error:
             st.error(st.session_state.login_error)
@@ -279,7 +304,7 @@ if not st.session_state.logged_in:
 
 # Seed initial assistant prompt on first load
 if st.session_state.logged_in and not st.session_state.chat_history:
-    st.session_state.next_prompt = "Please provide details about the SBI fraud case."
+    st.session_state.next_prompt = "Hello😊 Please provide details about SBI fraud case."
 
 # -------------------------
 # DISPLAY CHAT HISTORY
@@ -349,7 +374,10 @@ for idx, chat in enumerate(st.session_state.chat_history):
                         key=f"download_{idx}_{doc_name}"
                     )
             elif file_id:
-                resp = requests.get(f"{API_BASE}/documents/{file_id}")
+                resp = requests.get(
+                    urljoin(f"{API_BASE}/", f"documents/{file_id}"),
+                    timeout=API_REQUEST_TIMEOUT_SECONDS,
+                )
                 if resp.status_code == 200:
                     st.download_button(
                         label=f"Download {doc_name}",
@@ -382,7 +410,7 @@ st.markdown('</div>', unsafe_allow_html=True)
 # USER INPUT
 # -------------------------
 
-user_query = st.chat_input("Describe the SBI fraud case or reply Yes / No when asked")
+user_query = st.chat_input("Describe the fraud case or reply Yes / No when asked")
 
 # -------------------------
 # HANDLE USER QUERY
