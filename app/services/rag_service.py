@@ -1,42 +1,47 @@
+from app.core.config import RAG_MIN_SIMILARITY, RAG_TOP_K
 from app.ml.embeddings import generate_embedding
 from app.ml.vector_store import search_vector
 
 
-def retrieve_context(query, bank_id):
+def retrieve_context(query, bank_id, top_k=RAG_TOP_K):
+    query_embedding = generate_embedding(query, task_type="RETRIEVAL_QUERY")
+    results = search_vector(query_embedding, bank_id, top_k=top_k)
 
-    query_embedding = generate_embedding(query)
+    if not results:
+        return "", [], []
 
-    results = search_vector(query_embedding, bank_id, top_k=3)
+    filtered_results = [
+        (similarity, doc)
+        for similarity, doc in results
+        if isinstance(similarity, (int, float)) and similarity >= RAG_MIN_SIMILARITY
+    ]
+
+    if not filtered_results:
+        best_similarity, best_doc = results[0]
+        if isinstance(best_similarity, (int, float)) and best_similarity >= max(RAG_MIN_SIMILARITY * 0.75, 0.05):
+            filtered_results = [(best_similarity, best_doc)]
 
     context_blocks = []
     reference_files = []
+    ranked_chunks = []
 
-    for r in results:
-
-        text = ""
-        file_name = ""
-
-        # result is (similarity, doc)
-        if isinstance(r, tuple) and len(r) == 2:
-
-            similarity, doc = r
-
-            if isinstance(doc, dict):
-                text = doc.get("text", "")
-                file_name = doc.get("fileName", "")
-
-        # fallback
-        elif isinstance(r, dict):
-
-            text = r.get("text", "")
-            file_name = r.get("fileName", "")
+    for similarity, doc in filtered_results:
+        text = doc.get("text", "")
+        source_file = doc.get("sourceFile") or doc.get("fileName", "")
 
         if text:
             context_blocks.append(text)
 
-        if file_name:
-            reference_files.append(file_name)
+        if source_file and source_file not in reference_files:
+            reference_files.append(source_file)
 
-    context = "\n".join(context_blocks)
+        ranked_chunks.append(
+            {
+                "file_name": source_file,
+                "score": similarity,
+                "text": text,
+            }
+        )
 
-    return context, reference_files
+    context = "\n\n".join(context_blocks)
+    return context, reference_files, ranked_chunks

@@ -1,26 +1,24 @@
 from fastapi import FastAPI
 
 from app.api import fraud
-from app.ml.vector_store import rebuild_vector_index, load_sbi_documents
+from app.ml.vector_store import load_sbi_documents, rebuild_vector_index
+
 
 app = FastAPI(title="SBI Fraud Investigation Assistant")
 
 
 @app.on_event("startup")
 def startup_event():
-    """
-    Startup steps:
-    1. Load existing SBI vectors from MongoDB into memory + FAISS
-    2. Index only new SBI PDFs that are not already in MongoDB
-    """
     print("Starting up system...")
 
-    rebuild_vector_index()
-    load_sbi_documents()
-    print("System ready. SBI vector index built and SBI PDFs indexed if any.")
+    try:
+        rebuild_vector_index()
+        load_sbi_documents()
+        print("System ready. SBI SOP metadata loaded and Gemini RAG index initialized when available.")
+    except Exception as exc:
+        print(f"Startup warning: {exc}")
 
 
-# Include routers
 app.include_router(fraud.router)
 
 

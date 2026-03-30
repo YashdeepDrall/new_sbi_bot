@@ -1,9 +1,5 @@
-from sentence_transformers import SentenceTransformer
+from app.services.llm_service import embed_text
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
 
-def generate_embedding(text):
-
-    embedding = model.encode(text)
-
-    return embedding
+def generate_embedding(text, task_type="RETRIEVAL_QUERY"):
+    return embed_text(text, task_type=task_type)
