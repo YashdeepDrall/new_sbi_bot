@@ -2,6 +2,7 @@ services:
   - type: web
     name: sbi-fraud-api
     runtime: python
+    branch: feature-chat
     plan: free
     region: singapore
     buildCommand: pip install -r requirements-backend.txt && python scripts/precompute_vectors.py
@@ -28,6 +29,7 @@ services:
   - type: web
     name: sbi-fraud-ui
     runtime: python
+    branch: feature-chat
     plan: free
     region: singapore
     buildCommand: pip install -r requirements-frontend.txt
